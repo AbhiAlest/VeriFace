@@ -1,36 +1,72 @@
 import os
-import cv2
 import numpy as np
-from sklearn.model_selection import train_test_split
+import pandas as pd
+import tensorflow as tf
+from tensorflow.keras.preprocessing.image import load_img, img_to_array
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.utils.class_weight import compute_class_weight
 
-actual_faces_path = '/path/to/actual_faces/'
-deepfaked_faces_path = '/path/to/deepfaked_faces/'
+# Define actual faces and deepfaked faces directories
+actual_faces_dir = '/path/to/actual_faces'
+deepfaked_faces_dir = '/path/to/deepfaked_faces'
 
-img_size = 128
+# Load actual faces
+X_actual = []
+y_actual = []
+for filename in os.listdir(actual_faces_dir):
+    image_path = os.path.join(actual_faces_dir, filename)
+    image = load_img(image_path, target_size=(224, 224))
+    image = img_to_array(image)
+    X_actual.append(image)
+    y_actual.append(0)  # label 0 for actual faces
 
-def preprocess_image(img):
-    img = cv2.resize(img, (img_size, img_size))
-    img = img.astype('float32') / 255.0
-    img -= np.mean(img, axis=(0, 1))
-    return img
+# Load deepfaked faces
+X_deepfake = []
+y_deepfake = []
+for filename in os.listdir(deepfaked_faces_dir):
+    image_path = os.path.join(deepfaked_faces_dir, filename)
+    image = load_img(image_path, target_size=(224, 224))
+    image = img_to_array(image)
+    X_deepfake.append(image)
+    y_deepfake.append(1)  # label 1 for deepfaked faces
 
-actual_faces = []
-for filename in os.listdir(actual_faces_path):
-    img = cv2.imread(os.path.join(actual_faces_path, filename))
-    img = preprocess_image(img)
-    actual_faces.append(img)
-actual_faces = np.array(actual_faces)
+# Combine data
+X = np.concatenate([X_actual, X_deepfake], axis=0)
+y = np.concatenate([y_actual, y_deepfake], axis=0)
 
-deepfaked_faces = []
-for filename in os.listdir(deepfaked_faces_path):
-    img = cv2.imread(os.path.join(deepfaked_faces_path, filename))
-    img = preprocess_image(img)
-    deepfaked_faces.append(img)
-deepfaked_faces = np.array(deepfaked_faces)
+# Convert to numpy arrays
+X = np.array(X)
+y = np.array(y)
 
-X_train, X_val, y_train, y_val = train_test_split(
-    np.concatenate([actual_faces, deepfaked_faces]), 
-    np.concatenate([np.ones(len(actual_faces)), np.zeros(len(deepfaked_faces))]),
-    test_size=0.3,
-    random_state=42
-)
+# Split data into training, validation, and test sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, stratify=y_train, random_state=42)
+
+# Calculate class weights to handle imbalanced classes
+class_weights = compute_class_weight('balanced', np.unique(y_train), y_train)
+
+# Define the model
+def create_model(learning_rate=0.001, dropout_rate=0.5, filters=64, kernel_size=3, units=128):
+    model = tf.keras.Sequential([
+        tf.keras.layers.Conv2D(filters=filters, kernel_size=kernel_size, activation='relu', input_shape=(224, 224, 3)),
+        tf.keras.layers.MaxPooling2D(),
+        tf.keras.layers.Conv2D(filters=filters//2, kernel_size=kernel_size, activation='relu'),
+        tf.keras.layers.MaxPooling2D(),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(units=units, activation='relu'),
+        tf.keras.layers.Dropout(dropout_rate),
+        tf.keras.layers.Dense(units=1, activation='sigmoid')
+    ])
+    optimizer = tf.keras.optimizers.Adam(lr=learning_rate)
+    model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+    return model
+
+# Hyperparameter tuning with grid search
+param_grid = {
+    'learning_rate': [0.001, 0.01, 0.1],
+    'dropout_rate': [0.2, 0.3, 0.4],
+    'filters': [32, 64, 128],
+    'kernel_size': [3, 5],
+    'units': [64, 128, 256]
+}
+model = tf.keras.wrappers.scikit_learn.K
