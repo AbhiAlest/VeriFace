@@ -62,4 +62,20 @@ model.add(Dense(1, activation='sigmoid'))
 optimizer = Adam(lr=0.001)
 model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
 grid_search = GridSearchCV(model, param_grid, cv=3, scoring='roc_auc', verbose=1, n_jobs=-1)
-grid_search.fit(X_train, y_train, validation_data=(X_val, y_val), class
+grid_search.fit(train_generator, steps_per_epoch=len(train_generator), validation_data=valid_generator, validation_steps=len(valid_generator), class_weight=class_weights)
+                
+# Train the model with the best hyperparameters
+model.fit(train_generator, epochs=20, validation_data=valid_generator, callbacks=[early_stopping, checkpoint])
+
+# Evaluate the model on the test set
+test_loss, test_accuracy = model.evaluate(test_generator)
+print("Test loss:", test_loss)
+print("Test accuracy:", test_accuracy)
+
+# Make predictions on the test set
+y_pred = model.predict(test_generator)
+
+# Calculate AUC
+auc = roc_auc_score(test_generator.classes, y_pred)
+print("AUC:", auc)
+                
